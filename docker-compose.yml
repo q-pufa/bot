@@ -1,0 +1,38 @@
+services:
+  apache:
+    container_name: bot_web
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - ./:/var/www/html
+    networks:
+      - mynetwork
+    environment:
+      - VIRTUAL_HOST=localhost
+      - VIRTUAL_PORT=80
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  postgres:
+    image: postgres:15
+    container_name: bot_postgres
+    environment:
+      POSTGRES_DB:  task_manager
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mynetwork
+    ports:
+      - "5433:5432"
+
+volumes:
+  pgdata:
+
+networks:
+  mynetwork:
+    driver: bridge
