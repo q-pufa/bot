@@ -3,44 +3,26 @@
 namespace App\Telegraph;
 
 use DefStudio\Telegraph\Handlers\WebhookHandler;
+use DefStudio\Telegraph\Keyboard\Button;
+use DefStudio\Telegraph\Keyboard\Keyboard;
 use App\Actions\Telegram\StoreTelegramUserAction;
-use Illuminate\Support\Facades\Http;
-use DefStudio\Telegraph\Models\TelegraphBot;
-use Illuminate\Http\Request;
+use App\Services\TaskService;
+use App\Models\Task;
 
 class BotHandler extends WebhookHandler
 {
-    public function handle(Request $request, TelegraphBot $bot): void
+    protected TaskService $taskService;
+
+    public function __construct()
     {
-        parent::handle($request, $bot);
-
-        $msg = $this->message->text();
-        $userId = $this->message->from()->id();
-        $step = cache()->get("tg:step:$userId");
-
-        // Якщо користувач у діалозі створення задачі
-        if ($step === 'wait_title' || $step === 'wait_description') {
-            $this->newtask($msg);
-            return;
-        }
-
-        if ($msg === '/tasks') {
-            $this->tasks();
-        } elseif (str_starts_with($msg, '/newtask')) {
-            $this->newtask(trim(str_replace('/newtask', '', $msg)));
-        } elseif (str_starts_with($msg, '/updatetask')) {
-            $this->updatetask(trim(str_replace('/updatetask', '', $msg)));
-        } elseif (str_starts_with($msg, '/deletetask')) {
-            $this->deletetask(trim(str_replace('/deletetask', '', $msg)));
-        }
+        $this->taskService = app(TaskService::class);
     }
-
 
     public function start()
     {
         $from = $this->message->from();
 
-        app(StoreTelegramUserAction::class)->execute([
+        $user = app(StoreTelegramUserAction::class)->execute([
             'telegram_id' => $from->id(),
             'username'    => $from->username(),
             'first_name'  => $from->firstName(),
@@ -49,7 +31,16 @@ class BotHandler extends WebhookHandler
 
         $name = $from->firstName() ?: $from->username() ?: 'користувачу';
 
-        $this->reply("Вітаю, $name! 👋\nВи зареєстровані в Task Manager Bot.");
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('📋 Мої задачі')->action('listTasks'),
+            Button::make('➕ Створити задачу')->action('createTaskPrompt'),
+        ]);
+
+        $this->chat
+            ->message("Вітаю, $name! 👋\nВи зареєстровані в Task Manager Bot.")
+            ->keyboard($keyboard)
+            ->send();
+
     }
 
     public function help()
@@ -58,130 +49,302 @@ class BotHandler extends WebhookHandler
             "Доступні команди:\n" .
             "/start - Запуск бота та реєстрація користувача.\n" .
             "/help - Вивід довідки по командам бота.\n" .
-            "/tasks - Показати список ваших задач.\n" .
-            "/newtask [текст] - Створити нову задачу.\n" .
-            "/updatetask [id] [текст] - Оновити задачу.\n" .
-            "/deletetask [id] - Видалити задачу."
+            "/tasks - Переглянути всі ваші задачі.\n" .
+            "/create - Створити нову задачу.\n\n" .
+            "Або використовуйте кнопки для швидкого доступу:"
         );
     }
 
     public function tasks()
     {
-        $from = $this->message->from();
-        $response = Http::get(config('services.api.url') . '/api/tasks', [
-            'telegram_user_id' => $from->id(),
+        $this->listTasks();
+    }
+
+    public function create()
+    {
+        $this->createTaskPrompt();
+    }
+
+    public function listTasks()
+    {
+        if ($this->message) {
+            $telegramId = $this->message->from()->id();
+        } else {
+            // fallback для callback-кнопок
+            $telegramId = $this->chat->storage()->get('telegram_user_id');
+        }
+
+        $tasks = $this->taskService->getUserTasks($telegramId);
+
+        if ($tasks->isEmpty()) {
+            $keyboard = Keyboard::make()->buttons([
+                Button::make('➕ Створити задачу')->action('createTaskPrompt'),
+            ]);
+
+            $this->chat->message("У вас ще немає задач. Створіть першу!")->keyboard($keyboard)->send();
+            return;
+        }
+
+        $message = "📋 Ваші задачі:\n\n";
+        $buttons = [];
+
+        foreach ($tasks as $task) {
+            $status = $this->getStatusEmoji($task->status);
+            $priority = $this->getPriorityEmoji($task->priority);
+
+            $message .= "{$status} {$priority} {$task->title}\n";
+            $message .= "   Статус: {$task->status}\n";
+            $message .= "   Пріоритет: {$task->priority}\n";
+            if ($task->due_date) {
+                $message .= "   Дедлайн: " . $task->due_date->format('d.m.Y H:i') . "\n";
+            }
+            $message .= "\n";
+
+            $buttons[] = Button::make("📝 {$task->title}")->action('showTask')->param('task_id', $task->id);
+        }
+
+        $buttons[] = Button::make('➕ Створити задачу')->action('createTaskPrompt');
+
+        $keyboard = Keyboard::make()->buttons($buttons);
+        $this->chat->message($message)->keyboard($keyboard)->send();
+
+    }
+
+    public function showTask()
+    {
+        $taskId = $this->data->get('task_id');
+        $task = Task::find($taskId);
+
+        if (!$task || $task->user->telegram_id !== $this->message->from()->id()) {
+            $this->reply("Задачу не знайдено або у вас немає доступу до неї.");
+            return;
+        }
+
+        $status = $this->getStatusEmoji($task->status);
+        $priority = $this->getPriorityEmoji($task->priority);
+
+        $message = "{$status} {$priority} *{$task->title}*\n\n";
+        $message .= "📝 *Опис:* " . ($task->description ?: 'Немає опису') . "\n";
+        $message .= "🎯 *Статус:* {$task->status}\n";
+        $message .= "⚡ *Пріоритет:* {$task->priority}\n";
+
+        if ($task->due_date) {
+            $message .= "⏰ *Дедлайн:* " . $task->due_date->format('d.m.Y H:i') . "\n";
+        }
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('✏️ Редагувати')->action('editTaskMenu')->param('task_id', $task->id),
+            Button::make('🗑️ Видалити')->action('deleteTaskConfirm')->param('task_id', $task->id),
+            Button::make('📋 Всі задачі')->action('listTasks'),
         ]);
 
-        if ($response->successful() && count($response->json())) {
-            $tasks = collect($response->json())
-                ->map(fn($task) => "• *{$task['title']}* [{$task['status']}] (ID: {$task['id']})")
-                ->implode("\n");
-            $this->reply("Ваші задачі:\n\n$tasks");
+        $this->chat->message($message)->keyboard($keyboard)->send();
+
+    }
+
+    public function editTaskMenu()
+    {
+        $taskId = $this->data->get('task_id');
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('📝 Змінити статус')->action('changeStatus')->param('task_id', $taskId),
+            Button::make('⚡ Змінити пріоритет')->action('changePriority')->param('task_id', $taskId),
+            Button::make('🔙 Назад до задачі')->action('showTask')->param('task_id', $taskId),
+        ]);
+
+        $this->chat->message("Що ви хочете змінити в задачі?")->keyboard($keyboard)->send();
+
+    }
+
+    public function changeStatus()
+    {
+        $taskId = $this->data->get('task_id');
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('⏳ Очікує')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'pending'),
+            Button::make('🔄 В процесі')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'in_progress'),
+            Button::make('✅ Завершено')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'completed'),
+            Button::make('❌ Скасовано')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'cancelled'),
+            Button::make('🔙 Назад')->action('editTaskMenu')->param('task_id', $taskId),
+        ]);
+
+        $this->chat->message("Оберіть новий статус:")->keyboard($keyboard)->send();
+
+    }
+
+    public function changePriority()
+    {
+        $taskId = $this->data->get('task_id');
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('🔴 Високий')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'high'),
+            Button::make('🟡 Середній')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'medium'),
+            Button::make('🟢 Низький')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'low'),
+            Button::make('🔙 Назад')->action('editTaskMenu')->param('task_id', $taskId),
+        ]);
+
+        $this->chat->message("Оберіть новий пріоритет:")->keyboard($keyboard)->send();
+
+    }
+
+    public function updateTaskStatus()
+    {
+        $taskId = $this->data->get('task_id');
+        $status = $this->data->get('status');
+
+        $success = $this->taskService->updateTask($taskId, ['status' => $status]);
+
+        if ($success) {
+            $this->reply("✅ Статус задачі оновлено!");
+            $this->showTask();
         } else {
-            $this->reply('У вас ще немає задач або сталася помилка.');
+            $this->reply("❌ Помилка при оновленні статусу задачі.");
         }
     }
 
-// Импровизированный state-менеджмент через cache
-    public function newtask($text = null)
+    public function updateTaskPriority()
     {
-        $from = $this->message->from();
-        $userId = $from->id();
+        $taskId = $this->data->get('task_id');
+        $priority = $this->data->get('priority');
 
-        // Если только /newtask — спрашиваем title
-        if (empty(trim($text))) {
-            cache()->put("tg:step:$userId", 'wait_title', 300);
-            $this->reply('✍️ Введіть назву задачі:');
-            return;
+        $success = $this->taskService->updateTask($taskId, ['priority' => $priority]);
+
+        if ($success) {
+            $this->reply("✅ Пріоритет задачі оновлено!");
+            $this->showTask();
+        } else {
+            $this->reply("❌ Помилка при оновленні пріоритету задачі.");
         }
+    }
 
-        // Проверяем, ждем ли мы title
-        $step = cache()->get("tg:step:$userId");
-        if ($step === 'wait_title') {
-            $title = trim($this->message->text());
-            if (mb_strlen($title) < 2) {
-                $this->reply('🤏 Назва має бути хоча б 2 символи! Введіть ще раз:');
-                return;
-            }
-            cache()->put("tg:task_title:$userId", $title, 300);
-            cache()->put("tg:step:$userId", 'wait_description', 300);
+    public function createTaskPrompt()
+    {
+        $this->reply(
+            "📝 Створення нової задачі\n\n" .
+            "Введіть назву задачі:"
+        );
 
-            $this->reply("📝 Бажаєте додати опис? (напишіть опис або натисніть /skip)");
-            return;
+        // Зберігаємо стан очікування назви задачі
+        $this->chat->storage()->set('awaiting_task_title', true);
+    }
+
+    public function deleteTaskConfirm()
+    {
+        $taskId = $this->data->get('task_id');
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('✅ Так, видалити')->action('deleteTask')->param('task_id', $taskId),
+            Button::make('❌ Скасувати')->action('showTask')->param('task_id', $taskId),
+        ]);
+
+        $this->chat->message("❓ Ви впевнені, що хочете видалити цю задачу?")->keyboard($keyboard)->send();
+
+    }
+
+    public function deleteTask()
+    {
+        $taskId = $this->data->get('task_id');
+        $success = $this->taskService->deleteTask($taskId);
+
+        if ($success) {
+            $this->reply("🗑️ Задачу видалено!");
+            $this->listTasks();
+        } else {
+            $this->reply("❌ Помилка при видаленні задачі.");
         }
+    }
 
-        // Ждем описание
-        if ($step === 'wait_description') {
-            $description = trim($this->message->text());
-            if ($description === '/skip') $description = '';
+    protected function handleChatMessage(\Illuminate\Support\Stringable $text): void
+    {
+        $plainText = $text->toString(); // або (string)$text
 
-            $title = cache()->pull("tg:task_title:$userId");
-            cache()->forget("tg:step:$userId");
-
-            // Теперь отправляем API
-            $response = Http::post(config('services.api.url') . '/api/tasks', [
-                'telegram_user_id' => $userId,
-                'title' => $title,
-                'description' => $description,
-            ]);
-            if ($response->successful()) {
-                $this->reply("🎉 Задачу '$title' створено! Молодець 💪");
-            } else {
-                $this->reply("Щось пішло не так 😕 Спробуй пізніше.");
-            }
-            return;
+        // Далі використання $plainText замість $text!
+        if ($this->chat->storage()->get('awaiting_task_title')) {
+            $this->handleTaskTitle($plainText);
+        } elseif ($this->chat->storage()->get('awaiting_task_description')) {
+            $this->handleTaskDescription($plainText);
+        } else {
+            parent::handleChatMessage($text);
         }
+    }
 
-        // Если команда с title через | — старий варіант (залишаємо для сумісності)
-        [$title, $description] = explode('|', $text.'|');
-        $title = trim($title);
-        $description = trim($description);
 
-        if (empty($title)) {
-            $this->reply("❗️ Напишіть назву задачі після /newtask або просто відправте /newtask для діалогу!");
-            return;
-        }
+    protected function handleTaskTitle($title)
+    {
+        $this->chat->storage()->set('task_title', $title);
+        $this->chat->storage()->forget('awaiting_task_title');
+        $this->chat->storage()->set('awaiting_task_description', true);
 
-        $response = Http::post(config('services.api.url') . '/api/tasks', [
-            'telegram_user_id' => $userId,
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('⏭️ Пропустити опис')->action('skipDescription'),
+        ]);
+
+        $this->chat
+            ->message("✅ Назва збережена: *{$title}*\n\nТепер введіть опис задачі (або натисніть 'Пропустити опис'):")
+            ->keyboard($keyboard)
+            ->send();
+
+    }
+
+    protected function handleTaskDescription($description)
+    {
+        $title = $this->chat->storage()->get('task_title');
+        $telegramId = $this->message->from()->id();
+
+        $task = $this->taskService->createTask([
+            'telegram_user_id' => $telegramId,
             'title' => $title,
             'description' => $description,
         ]);
 
-        if ($response->successful()) {
-            $this->reply("✅ Задачу '{$title}' створено!");
+        $this->chat->storage()->forget(['task_title', 'awaiting_task_description']);
+
+        if ($task) {
+            $this->reply("🎉 Задачу '{$title}' створено успішно!");
+            $this->listTasks();
         } else {
-            $this->reply("Не вдалося створити задачу 😔");
+            $this->reply("❌ Помилка при створенні задачі.");
         }
     }
 
-
-
-    public function updatetask($text)
+    public function skipDescription()
     {
-        $from = $this->message->from();
-        [$id, $status] = explode(' ', $text);
+        $title = $this->chat->storage()->get('task_title');
+        $telegramId = $this->message->from()->id();
 
-        $response = Http::put(config('services.api.url') . "/api/tasks/{$id}", [
-            'status' => $status,
+        $task = $this->taskService->createTask([
+            'telegram_user_id' => $telegramId,
+            'title' => $title,
         ]);
 
-        if ($response->successful()) {
-            $this->reply("Задачу оновлено ✅");
+        $this->chat->storage()->forget(['task_title', 'awaiting_task_description']);
+
+        if ($task) {
+            $this->reply("🎉 Задачу '{$title}' створено успішно!");
+            $this->listTasks();
         } else {
-            $this->reply("Не вдалося оновити задачу 😔");
+            $this->reply("❌ Помилка при створенні задачі.");
         }
     }
 
-    public function deletetask($id)
+    protected function getStatusEmoji($status)
     {
-        $response = Http::delete(config('services.api.url') . "/api/tasks/{$id}");
+        return match($status) {
+            'pending' => '⏳',
+            'in_progress' => '🔄',
+            'completed' => '✅',
+            'cancelled' => '❌',
+            default => '❓'
+        };
+    }
 
-        if ($response->status() === 204) {
-            $this->reply("Задачу видалено 🗑️");
-        } else {
-            $this->reply("Не вдалося видалити задачу 😔");
-        }
+    protected function getPriorityEmoji($priority)
+    {
+        return match($priority) {
+            'high' => '🔴',
+            'medium' => '🟡',
+            'low' => '🟢',
+            default => '⚪'
+        };
     }
 }
-
