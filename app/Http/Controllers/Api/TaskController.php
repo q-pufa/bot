@@ -17,23 +17,33 @@ class TaskController extends Controller
     {
         $query = Task::with('user');
 
-        if ($request->has('telegram_user_id')) {
+        if ($request->filled('telegram_user_id')) {
             $query->where('telegram_user_id', $request->get('telegram_user_id'));
         }
-
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->get('status'));
         }
-
-        if ($request->has('priority')) {
+        if ($request->filled('priority')) {
             $query->where('priority', $request->get('priority'));
+        }
+        if ($request->filled('due_date_from')) {
+            $query->whereDate('due_date', '>=', $request->get('due_date_from'));
+        }
+        if ($request->filled('due_date_to')) {
+            $query->whereDate('due_date', '<=', $request->get('due_date_to'));
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->get('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'ilike', "%$search%")
+                    ->orWhere('description', 'ilike', "%$search%");
+            });
         }
 
         $tasks = $query->orderBy('created_at', 'desc')->get();
-
         return response()->json($tasks);
     }
-
     /**
      * Store a newly created resource in storage.
      */

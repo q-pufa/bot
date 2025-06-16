@@ -2,12 +2,15 @@
 
 namespace App\Telegraph;
 
+use App\Models\TelegramUser;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
 use DefStudio\Telegraph\Keyboard\Keyboard;
 use App\Actions\Telegram\StoreTelegramUserAction;
 use App\Services\TaskService;
 use App\Models\Task;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Stringable;
 
 class BotHandler extends WebhookHandler
 {
@@ -18,7 +21,7 @@ class BotHandler extends WebhookHandler
         $this->taskService = app(TaskService::class);
     }
 
-    public function start()
+    public function start(  ): void
     {
         $from = $this->message->from();
 
@@ -34,6 +37,8 @@ class BotHandler extends WebhookHandler
         $keyboard = Keyboard::make()->buttons([
             Button::make('📋 Мої задачі')->action('listTasks'),
             Button::make('➕ Створити задачу')->action('createTaskPrompt'),
+            Button::make('🔍 Пошук задач')->action('searchTaskPrompt'),
+            Button::make('❓ Довідка')->action('help'),
         ]);
 
         $this->chat
@@ -43,7 +48,7 @@ class BotHandler extends WebhookHandler
 
     }
 
-    public function help()
+    public function help(): void
     {
         $this->reply(
             "Доступні команди:\n" .
@@ -55,65 +60,164 @@ class BotHandler extends WebhookHandler
         );
     }
 
-    public function tasks()
+    public function tasks(): void
     {
         $this->listTasks();
     }
 
-    public function create()
+    public function create(): void
     {
         $this->createTaskPrompt();
     }
-
-    public function listTasks()
+    public function filter(): void
     {
-        if ($this->message) {
-            $telegramId = $this->message->from()->id();
-            $this->chat->storage()->set('telegram_user_id', $telegramId);
-        } else {
-            $telegramId = $this->chat->storage()->get('telegram_user_id');
+        $this->filterMenu();
+    }
+
+    public function search(): void
+    {
+        $this->searchTaskPrompt();
+    }
+
+    public function filterMenu(): void
+    {
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('📌 Статус')->action('filterByStatusMenu'),
+            Button::make('⚡ Пріоритет')->action('filterByPriorityMenu'),
+            Button::make('📅 Дата дедлайну')->action('filterByDeadlinePrompt'),
+            Button::make('📋 Всі задачі')->action('listTasks'),
+        ]);
+
+        $this->chat->message("Оберіть параметр фільтрації:")->keyboard($keyboard)->send();
+    }
+
+    public function filterByStatusMenu(): void
+    {
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('⏳ Очікує')->action('applyFilter')->param('status', 'pending'),
+            Button::make('🔄 В процесі')->action('applyFilter')->param('status', 'in_progress'),
+            Button::make('✅ Завершено')->action('applyFilter')->param('status', 'completed'),
+            Button::make('❌ Скасовано')->action('applyFilter')->param('status', 'cancelled'),
+            Button::make('🔙 Назад')->action('filterMenu'),
+        ]);
+
+        $this->chat->message("Оберіть статус для фільтрації:")->keyboard($keyboard)->send();
+    }
+
+    public function filterByPriorityMenu(): void
+    {
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('🔴 Високий')->action('applyFilter')->param('priority', 'high'),
+            Button::make('🟡 Середній')->action('applyFilter')->param('priority', 'medium'),
+            Button::make('🟢 Низький')->action('applyFilter')->param('priority', 'low'),
+            Button::make('🔙 Назад')->action('filterMenu'),
+        ]);
+
+        $this->chat->message("Оберіть пріоритет для фільтрації:")->keyboard($keyboard)->send();
+    }
+
+    public function filterByDeadlinePrompt(): void
+    {
+        $this->chat->storage()->set('awaiting_deadline_filter', true);
+        $this->chat->message("Введіть дату дедлайну у форматі `дд.мм.рррр` для фільтрації:")->send();
+    }
+
+    public function applyFilter(): void
+    {
+        $status = $this->data->get('status');
+        $priority = $this->data->get('priority');
+        $telegramId = $this->chat->storage()->get('telegram_user_id') ?? $this->message->from()->id();
+        $user = TelegramUser::where('telegram_id', $telegramId)->first();
+
+        if (!$user) {
+            $this->chat->message("Спочатку зареєструйтесь через /start.")->send();
+            return;
         }
 
+        $filters = ['telegram_user_id' => $user->id];
+        if ($status) {
+            $filters['status'] = $status;
+        }
+        if ($priority) {
+            $filters['priority'] = $priority;
+        }
+
+        $tasks = $this->taskService->getUserTasksFilteredWithQuery($filters);
+
+        if ($tasks->isEmpty()) {
+            $this->chat->message("Задач за обраними фільтрами не знайдено.")->send();
+            return;
+        }
+
+        $formatted = $this->formatTasks($tasks);
+        $formatted['buttons'][] = Button::make('🔙 Назад до фільтрів')->action('filterMenu');
+        $keyboard = Keyboard::make()->buttons($formatted['buttons']);
+        $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
+    }
+
+    public function applyFilterWithParams(array $params): void
+    {
+        $telegramId = $this->chat->storage()->get('telegram_user_id') ?? $this->message->from()->id();
+        $user = TelegramUser::where('telegram_id', $telegramId)->first();
+
+        if (!$user) {
+            $this->chat->message("Спочатку зареєструйтесь через /start.")->send();
+            return;
+        }
+
+        $filters = ['telegram_user_id' => $user->id];
+        if (isset($params['due_date_from'])) {
+            $filters['due_date_from'] = $params['due_date_from'];
+        }
+        if (isset($params['due_date_to'])) {
+            $filters['due_date_to'] = $params['due_date_to'];
+        }
+
+        $tasks = $this->taskService->getUserTasksFilteredWithQuery($filters);
+
+        $keyboard = Keyboard::make()->buttons([
+            Button::make('🔎 Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
+            Button::make('🔙 Назад до фільтрів')->action('filterMenu'),
+        ]);
+
+        if ($tasks->isEmpty()) {
+            $this->chat->message("Задач за обраними фільтрами не знайдено.")->keyboard($keyboard)->send();
+            return;
+        }
+
+        $formatted = $this->formatTasks($tasks);
+        $formatted['buttons'] = array_merge($formatted['buttons'], [
+            Button::make('🔎 Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
+            Button::make('🔙 Назад до фільтрів')->action('filterMenu'),
+        ]);
+        $keyboard = Keyboard::make()->buttons($formatted['buttons']);
+        $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
+    }
+
+    public function listTasks(): void
+    {
+        $telegramId = $this->message?->from()->id() ?? $this->chat->storage()->get('telegram_user_id');
+        $this->chat->storage()->set('telegram_user_id', $telegramId);
         $tasks = $this->taskService->getUserTasks($telegramId);
 
         if ($tasks->isEmpty()) {
             $keyboard = Keyboard::make()->buttons([
-                Button::make('➕ Створити задачу')->action('createTaskPrompt'),
+                Button::make('➕ Создать задачу')->action('createTaskPrompt'),
+                Button::make('🔍 Поиск задач')->action('searchTaskPrompt'),
+                Button::make('❓ Справка')->action('help'),
             ]);
-
-            $this->chat->message("У вас ще немає задач. Створіть першу!")->keyboard($keyboard)->send();
+            $this->chat->message("У вас ещё нет задач. Создайте первую!")->keyboard($keyboard)->send();
             return;
         }
 
-        $message = "📋 Ваші задачі:\n\n";
-        $buttons = [];
-
-        foreach ($tasks as $task) {
-            $status = $this->getStatusEmoji($task->status instanceof \BackedEnum ? $task->status->value : $task->status);
-            $priority = $this->getPriorityEmoji($task->priority instanceof \BackedEnum ? $task->priority->value : $task->priority);
-
-            $statusText = $task->status instanceof \BackedEnum ? $task->status->value : $task->status;
-            $priorityText = $task->priority instanceof \BackedEnum ? $task->priority->value : $task->priority;
-
-            $message .= "{$status} {$priority} {$task->title}\n";
-            $message .= "   Статус: {$statusText}\n";
-            $message .= "   Пріоритет: {$priorityText}\n";
-            if ($task->due_date) {
-                $message .= "   Дедлайн: " . $task->due_date->format('d.m.Y H:i') . "\n";
-            }
-            $message .= "\n";
-
-            $buttons[] = Button::make("📝 {$task->title}")->action('showTask')->param('task_id', $task->id);
-        }
-
-        $buttons[] = Button::make('➕ Створити задачу')->action('createTaskPrompt');
-
-        $keyboard = Keyboard::make()->buttons($buttons);
-        $this->chat->message($message)->keyboard($keyboard)->send();
+        $formatted = $this->formatTasks($tasks);
+        $formatted['buttons'][] = Button::make('➕ Создать задачу')->action('createTaskPrompt');
+        $formatted['buttons'][] = Button::make('🔍 Поиск задач')->action('searchTaskPrompt');
+        $keyboard = Keyboard::make()->buttons($formatted['buttons']);
+        $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
     }
 
-
-    public function showTask()
+    public function showTask(): void
     {
         $taskId = $this->data->get('task_id');
         $task = Task::find($taskId);
@@ -145,8 +249,7 @@ class BotHandler extends WebhookHandler
         $this->chat->message($message)->keyboard($keyboard)->send();
     }
 
-
-    public function editTaskMenu()
+    public function editTaskMenu(): void
     {
         $taskId = $this->data->get('task_id');
 
@@ -164,7 +267,7 @@ class BotHandler extends WebhookHandler
 
     }
 
-    public function editTitle()
+    public function editTitle(): void
     {
         $taskId = $this->data->get('task_id');
         $this->chat->storage()->set('edit_task_id', $taskId);
@@ -172,7 +275,7 @@ class BotHandler extends WebhookHandler
         $this->chat->message("Введіть нову назву задачі:")->send();
     }
 
-    public function editDescription()
+    public function editDescription(): void
     {
         $taskId = $this->data->get('task_id');
         $this->chat->storage()->set('edit_task_id', $taskId);
@@ -180,7 +283,7 @@ class BotHandler extends WebhookHandler
         $this->chat->message("Введіть новий опис задачі:")->send();
     }
 
-    public function changeStatus()
+    public function changeStatus(): void
     {
         $taskId = $this->data->get('task_id');
 
@@ -195,7 +298,7 @@ class BotHandler extends WebhookHandler
         $this->chat->message("Оберіть новий статус:")->keyboard($keyboard)->send();
     }
 
-    public function changePriority()
+    public function changePriority(): void
     {
         $taskId = $this->data->get('task_id');
 
@@ -210,7 +313,7 @@ class BotHandler extends WebhookHandler
 
     }
 
-    public function editDeadline()
+    public function editDeadline(): void
     {
         $taskId = $this->data->get('task_id');
         $this->chat->storage()->set('edit_task_id', $taskId);
@@ -219,7 +322,7 @@ class BotHandler extends WebhookHandler
     }
 
 
-    public function updateTaskStatus()
+    public function updateTaskStatus(): void
     {
         $taskId = $this->data->get('task_id');
         $status = $this->data->get('status');
@@ -234,7 +337,7 @@ class BotHandler extends WebhookHandler
         }
     }
 
-    public function updateTaskPriority()
+    public function updateTaskPriority(): void
     {
         $taskId = $this->data->get('task_id');
         $priority = $this->data->get('priority');
@@ -249,7 +352,7 @@ class BotHandler extends WebhookHandler
         }
     }
 
-    public function createTaskPrompt()
+    public function createTaskPrompt(): void
     {
         $this->chat->message(
             "📝 Створення нової задачі\n\n" .
@@ -259,7 +362,7 @@ class BotHandler extends WebhookHandler
         $this->chat->storage()->set('awaiting_task_title', true);
     }
 
-    public function deleteTaskConfirm()
+    public function deleteTaskConfirm(): void
     {
         $taskId = $this->data->get('task_id');
 
@@ -272,7 +375,7 @@ class BotHandler extends WebhookHandler
 
     }
 
-    public function deleteTask()
+    public function deleteTask(): void
     {
         $taskId = $this->data->get('task_id');
         $success = $this->taskService->deleteTask($taskId);
@@ -285,28 +388,94 @@ class BotHandler extends WebhookHandler
         }
     }
 
-    protected function handleChatMessage(\Illuminate\Support\Stringable $text): void
+    public function searchTaskPrompt()
     {
-        $plainText = $text->toString();
+        $this->chat->storage()->set('awaiting_search_query', true);
+        $this->chat->message("Введіть текст для пошуку по задачах (назва або опис):")->send();
+    }
+
+    protected function handleChatMessage(Stringable $text): void
+    {
+        $plainText = trim($text->toString());
+
+        if ($this->chat->storage()->get('awaiting_deadline_filter')) {
+            $this->chat->storage()->forget('awaiting_deadline_filter');
+            try {
+                $date = \DateTime::createFromFormat('d.m.Y', $plainText);
+                if ($date === false) {
+                    $this->chat->message("❌ Невірний формат дати. Використовуйте формат `дд.мм.рррр`.")->send();
+                    $this->filterByDeadlinePrompt();
+                    return;
+                }
+                $this->applyFilterWithParams([
+                    'due_date_from' => $date->format('Y-m-d'),
+                    'due_date_to' => $date->format('Y-m-d')
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('Помилка обробки дати: ' . $e->getMessage());
+                $this->chat->message("❌ Помилка при обробці дати. Спробуйте ще раз.")->send();
+                $this->filterByDeadlinePrompt();
+            }
+            return;
+        }
+
+        if ($this->chat->storage()->get('awaiting_search_query')) {
+            $this->chat->storage()->forget('awaiting_search_query');
+            $this->performTaskSearch($plainText);
+            return;
+        }
 
         if ($this->chat->storage()->get('awaiting_task_title')) {
             $this->handleTaskTitle($plainText);
-        } elseif ($this->chat->storage()->get('awaiting_task_description')) {
-            $this->handleTaskDescription($plainText);
-        } elseif ($this->chat->storage()->get('awaiting_task_due_date')) {
-            $this->setTaskDueDate($plainText);
-        } elseif ($this->chat->storage()->get('awaiting_new_title')) {
-            $this->saveNewTitle($plainText);
-        } elseif ($this->chat->storage()->get('awaiting_new_description')) {
-            $this->saveNewDescription($plainText);
-        } elseif ($this->chat->storage()->get('awaiting_new_deadline')) {
-            $this->saveNewDeadline($plainText);
-        } else {
-            parent::handleChatMessage($text);
+            return;
         }
+
+        if ($this->chat->storage()->get('awaiting_task_description')) {
+            $this->handleTaskDescription($plainText);
+            return;
+        }
+
+        if ($this->chat->storage()->get('awaiting_task_due_date')) {
+            $this->setTaskDueDate($plainText);
+            return;
+        }
+
+        if ($this->chat->storage()->get('awaiting_new_title')) {
+            $this->saveNewTitle($plainText);
+            return;
+        }
+
+        if ($this->chat->storage()->get('awaiting_new_deadline')) {
+            $this->saveNewDeadline($plainText);
+            return;
+        }
+
+        parent::handleChatMessage($text);
     }
 
-    protected function saveNewTitle($title)
+    protected function performTaskSearch($query): void
+    {
+        $telegramId = $this->chat->storage()->get('telegram_user_id') ?? $this->message->from()->id();
+        $user = TelegramUser::where('telegram_id', $telegramId)->first();
+
+        if (!$user) {
+            $this->chat->message("Сначала зарегистрируйтесь через /start.")->send();
+            return;
+        }
+
+        $tasks = $this->taskService->getUserTasksFiltered($user->id, $query);
+
+        if ($tasks->isEmpty()) {
+            $this->chat->message("Задач не найдено по этому запросу.")->send();
+            return;
+        }
+
+        $formatted = $this->formatTasks($tasks);
+        $keyboard = Keyboard::make()->buttons($formatted['buttons']);
+        $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
+    }
+
+    protected function saveNewTitle($title): void
     {
         $taskId = $this->chat->storage()->get('edit_task_id');
         $this->chat->storage()->forget('awaiting_new_title');
@@ -316,7 +485,7 @@ class BotHandler extends WebhookHandler
     }
 
 
-    protected function saveNewDeadline($date)
+    protected function saveNewDeadline($date): void
     {
         $taskId = $this->chat->storage()->get('edit_task_id');
         $this->chat->storage()->forget('awaiting_new_deadline');
@@ -336,14 +505,14 @@ class BotHandler extends WebhookHandler
         $this->showTaskWithId($taskId);
     }
 
-    protected function showTaskWithId($taskId)
+    protected function showTaskWithId($taskId): void
     {
         $this->data = collect(['task_id' => $taskId]);
         $this->showTask();
     }
 
 
-    public function setTaskDueDate($date = null)
+    public function setTaskDueDate($date = null): void
     {
         $this->chat->storage()->forget('awaiting_task_due_date');
 
@@ -369,13 +538,13 @@ class BotHandler extends WebhookHandler
     }
 
 
-    public function skipTaskDueDate()
+    public function skipTaskDueDate(): void
     {
         $this->chat->storage()->forget('awaiting_task_due_date');
         $this->createTaskFromStorage();
     }
 
-    protected function createTaskFromStorage()
+    protected function createTaskFromStorage(): void
     {
         $telegramId = $this->chat->storage()->get('telegram_user_id') ?? $this->message->from()->id();
         $title = $this->chat->storage()->get('task_title');
@@ -407,7 +576,7 @@ class BotHandler extends WebhookHandler
         }
     }
 
-    protected function handleTaskTitle($title)
+    protected function handleTaskTitle($title): void
     {
         $this->chat->storage()->set('task_title', $title);
         $this->chat->storage()->forget('awaiting_task_title');
@@ -424,14 +593,14 @@ class BotHandler extends WebhookHandler
 
     }
 
-    protected function handleTaskDescription($description)
+    protected function handleTaskDescription($description): void
     {
         $this->chat->storage()->set('task_description', $description);
         $this->chat->storage()->forget('awaiting_task_description');
         $this->askTaskStatus();
     }
 
-    public function setTaskStatus()
+    public function setTaskStatus(): void
     {
         $status = $this->data->get('status');
         $this->chat->storage()->set('task_status', $status);
@@ -450,7 +619,7 @@ class BotHandler extends WebhookHandler
             ->send();
     }
 
-    public function setTaskPriority()
+    public function setTaskPriority(): void
     {
         $priority = $this->data->get('priority');
         $this->chat->storage()->set('task_priority', $priority);
@@ -466,14 +635,14 @@ class BotHandler extends WebhookHandler
             )->send();
     }
 
-    public function skipDescription()
+    public function skipDescription(): void
     {
         $this->chat->storage()->set('task_description', null);
         $this->chat->storage()->forget('awaiting_task_description');
         $this->askTaskStatus();
     }
 
-    protected function askTaskStatus()
+    protected function askTaskStatus(): void
     {
         $this->chat->storage()->set('awaiting_task_status', true);
 
@@ -510,5 +679,28 @@ class BotHandler extends WebhookHandler
             'low' => '🟢',
             default => '⚪'
         };
+    }
+
+    protected function formatTasks(Collection $tasks, bool $includeButtons = true): array
+    {
+        $message = "📋 Результаты:\n\n";
+        $buttons = [];
+
+        foreach ($tasks as $task) {
+            $statusEmoji = $this->getStatusEmoji($task->status);
+            $priorityEmoji = $this->getPriorityEmoji($task->priority);
+            $message .= "{$statusEmoji} {$priorityEmoji} {$task->title}\n";
+            $message .= "   Статус: {$task->status->value}\n";
+            $message .= "   Приоритет: {$task->priority->value}\n";
+            if ($task->due_date) {
+                $message .= "   Дедлайн: " . $task->due_date->format('d.m.Y H:i') . "\n";
+            }
+            $message .= "\n";
+            if ($includeButtons) {
+                $buttons[] = Button::make("📝 {$task->title}")->action('showTask')->param('task_id', $task->id);
+            }
+        }
+
+        return ['message' => $message, 'buttons' => $buttons];
     }
 }

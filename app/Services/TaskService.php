@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Task;
 use App\Models\TelegramUser;
+use Carbon\Carbon;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Collection;
@@ -93,6 +94,41 @@ class TaskService
         }
     }
 
+    public function getUserTasksFiltered(int $telegramUserId, string $search): Collection
+    {
+        try {
+            $response = Http::get("{$this->apiUrl}/tasks", [
+                'telegram_user_id' => $telegramUserId,
+                'search' => $search,
+            ]);
+            if ($response->successful()) {
+                $tasksData = $response->json();
+                return collect($tasksData)->map(fn ($taskData) => $this->hydrateTask($taskData));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error searching tasks: ' . $e->getMessage());
+        }
+        return collect();
+    }
+
+    public function getUserTasksFilteredWithQuery(array $filters): Collection
+    {
+        try {
+            $response = Http::get("{$this->apiUrl}/tasks", $filters);
+
+            if ($response->successful()) {
+                $tasksData = $response->json();
+                return collect($tasksData)->map(fn ($taskData) => $this->hydrateTask($taskData));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error filtering tasks: ' . $e->getMessage());
+        }
+
+        return collect();
+    }
+
+
+
     public function getTask(int $taskId): ?Task
     {
         try {
@@ -117,11 +153,10 @@ class TaskService
         $task->description = $data['description'];
         $task->status = $data['status'];
         $task->priority = $data['priority'];
-        $task->due_date = $data['due_date'] ? new \Carbon\Carbon($data['due_date']) : null;
-        $task->created_at = new \Carbon\Carbon($data['created_at']);
-        $task->updated_at = new \Carbon\Carbon($data['updated_at']);
+        $task->due_date = $data['due_date'] ? new Carbon($data['due_date']) : null;
+        $task->created_at = new Carbon($data['created_at']);
+        $task->updated_at = new Carbon($data['updated_at']);
 
-        // Завантажуємо користувача
         $task->setRelation('user', TelegramUser::find($data['telegram_user_id']));
 
         return $task;

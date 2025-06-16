@@ -25,6 +25,8 @@ class RegisterTelegramCommands extends Command
             'help'    => 'Допомога по командам',
             'tasks'   => 'Список задач',
             'create'  => 'Створити нову задачу',
+            'search'  => 'Пошук задач (назва/опис)',
+            'filter'  => 'Фільтрація задач (статус, пріоритет, дедлайн)',
         ])->send();
 
         $this->info('✅ Команди Telegram бота зареєстровано.');
