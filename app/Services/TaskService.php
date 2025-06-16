@@ -17,9 +17,6 @@ class TaskService
         $this->apiUrl = config('app.url') . '/api';
     }
 
-    /**
-     * Отримати всі задачі користувача
-     */
     public function getUserTasks(int $telegramId): Collection
     {
         $user = TelegramUser::where('telegram_id', $telegramId)->first();
@@ -46,9 +43,6 @@ class TaskService
         return collect();
     }
 
-    /**
-     * Створити нову задачу
-     */
     public function createTask(array $data): ?Task
     {
         $user = TelegramUser::where('telegram_id', $data['telegram_user_id'])->first();
@@ -77,9 +71,6 @@ class TaskService
         return null;
     }
 
-    /**
-     * Оновити задачу
-     */
     public function updateTask(int $taskId, array $data): bool
     {
         try {
@@ -91,9 +82,6 @@ class TaskService
         }
     }
 
-    /**
-     * Видалити задачу
-     */
     public function deleteTask(int $taskId): bool
     {
         try {
@@ -105,9 +93,6 @@ class TaskService
         }
     }
 
-    /**
-     * Отримати конкретну задачу
-     */
     public function getTask(int $taskId): ?Task
     {
         try {
@@ -123,9 +108,6 @@ class TaskService
         return null;
     }
 
-    /**
-     * Перетворити дані з API в модель Task
-     */
     protected function hydrateTask(array $data): Task
     {
         $task = new Task();

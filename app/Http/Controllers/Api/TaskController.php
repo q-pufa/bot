@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Task;
@@ -17,17 +17,14 @@ class TaskController extends Controller
     {
         $query = Task::with('user');
 
-        // Фільтр по користувачу Telegram
         if ($request->has('telegram_user_id')) {
             $query->where('telegram_user_id', $request->get('telegram_user_id'));
         }
 
-        // Фільтр по статусу
         if ($request->has('status')) {
             $query->where('status', $request->get('status'));
         }
 
-        // Фільтр по пріоритету
         if ($request->has('priority')) {
             $query->where('priority', $request->get('priority'));
         }
