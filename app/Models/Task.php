@@ -29,9 +29,4 @@ class Task extends Model
     {
         return $this->belongsTo(TelegramUser::class, 'telegram_user_id');
     }
-
-    public function attachments(): HasMany
-    {
-        return $this->hasMany(Attachment::class);
-    }
 }

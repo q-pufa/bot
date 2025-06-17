@@ -35,10 +35,10 @@ class BotHandler extends WebhookHandler
         $name = $from->firstName() ?: $from->username() ?: 'користувачу';
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('📋 Мої задачі')->action('listTasks'),
-            Button::make('➕ Створити задачу')->action('createTaskPrompt'),
-            Button::make('🔍 Пошук задач')->action('searchTaskPrompt'),
-            Button::make('❓ Довідка')->action('help'),
+            Button::make('Мої задачі')->action('listTasks'),
+            Button::make('Створити задачу')->action('createTaskPrompt'),
+            Button::make('Пошук задач')->action('searchTaskPrompt'),
+            Button::make('Довідка')->action('help'),
         ]);
 
         $this->chat
@@ -55,7 +55,7 @@ class BotHandler extends WebhookHandler
             "/start - Запуск бота та реєстрація користувача.\n" .
             "/help - Вивід довідки по командам бота.\n" .
             "/tasks - Переглянути всі ваші задачі.\n" .
-            "/create - Створити нову задачу.\n\n" .
+            "/create - Створити нову задачу.\n" .
             "Або використовуйте кнопки для швидкого доступу:"
         );
     }
@@ -82,10 +82,10 @@ class BotHandler extends WebhookHandler
     public function filterMenu(): void
     {
         $keyboard = Keyboard::make()->buttons([
-            Button::make('📌 Статус')->action('filterByStatusMenu'),
-            Button::make('⚡ Пріоритет')->action('filterByPriorityMenu'),
-            Button::make('📅 Дата дедлайну')->action('filterByDeadlinePrompt'),
-            Button::make('📋 Всі задачі')->action('listTasks'),
+            Button::make('Статус')->action('filterByStatusMenu'),
+            Button::make('Пріоритет')->action('filterByPriorityMenu'),
+            Button::make('Дата дедлайну')->action('filterByDeadlinePrompt'),
+            Button::make('Всі задачі')->action('listTasks'),
         ]);
 
         $this->chat->message("Оберіть параметр фільтрації:")->keyboard($keyboard)->send();
@@ -94,11 +94,11 @@ class BotHandler extends WebhookHandler
     public function filterByStatusMenu(): void
     {
         $keyboard = Keyboard::make()->buttons([
-            Button::make('⏳ Очікує')->action('applyFilter')->param('status', 'pending'),
-            Button::make('🔄 В процесі')->action('applyFilter')->param('status', 'in_progress'),
-            Button::make('✅ Завершено')->action('applyFilter')->param('status', 'completed'),
-            Button::make('❌ Скасовано')->action('applyFilter')->param('status', 'cancelled'),
-            Button::make('🔙 Назад')->action('filterMenu'),
+            Button::make('Очікує')->action('applyFilter')->param('status', 'pending'),
+            Button::make('В процесі')->action('applyFilter')->param('status', 'in_progress'),
+            Button::make('Завершено')->action('applyFilter')->param('status', 'completed'),
+            Button::make('Скасовано')->action('applyFilter')->param('status', 'cancelled'),
+            Button::make('Назад')->action('filterMenu'),
         ]);
 
         $this->chat->message("Оберіть статус для фільтрації:")->keyboard($keyboard)->send();
@@ -107,10 +107,10 @@ class BotHandler extends WebhookHandler
     public function filterByPriorityMenu(): void
     {
         $keyboard = Keyboard::make()->buttons([
-            Button::make('🔴 Високий')->action('applyFilter')->param('priority', 'high'),
-            Button::make('🟡 Середній')->action('applyFilter')->param('priority', 'medium'),
-            Button::make('🟢 Низький')->action('applyFilter')->param('priority', 'low'),
-            Button::make('🔙 Назад')->action('filterMenu'),
+            Button::make('Високий')->action('applyFilter')->param('priority', 'high'),
+            Button::make('Середній')->action('applyFilter')->param('priority', 'medium'),
+            Button::make('Низький')->action('applyFilter')->param('priority', 'low'),
+            Button::make('Назад')->action('filterMenu'),
         ]);
 
         $this->chat->message("Оберіть пріоритет для фільтрації:")->keyboard($keyboard)->send();
@@ -150,7 +150,7 @@ class BotHandler extends WebhookHandler
         }
 
         $formatted = $this->formatTasks($tasks);
-        $formatted['buttons'][] = Button::make('🔙 Назад до фільтрів')->action('filterMenu');
+        $formatted['buttons'][] = Button::make('Назад до фільтрів')->action('filterMenu');
         $keyboard = Keyboard::make()->buttons($formatted['buttons']);
         $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
     }
@@ -176,8 +176,8 @@ class BotHandler extends WebhookHandler
         $tasks = $this->taskService->getUserTasksFilteredWithQuery($filters);
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('🔎 Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
-            Button::make('🔙 Назад до фільтрів')->action('filterMenu'),
+            Button::make('Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
+            Button::make('Назад до фільтрів')->action('filterMenu'),
         ]);
 
         if ($tasks->isEmpty()) {
@@ -187,8 +187,8 @@ class BotHandler extends WebhookHandler
 
         $formatted = $this->formatTasks($tasks);
         $formatted['buttons'] = array_merge($formatted['buttons'], [
-            Button::make('🔎 Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
-            Button::make('🔙 Назад до фільтрів')->action('filterMenu'),
+            Button::make('Фільтрувати ще раз')->action('filterByDeadlinePrompt'),
+            Button::make('Назад до фільтрів')->action('filterMenu'),
         ]);
         $keyboard = Keyboard::make()->buttons($formatted['buttons']);
         $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
@@ -202,17 +202,17 @@ class BotHandler extends WebhookHandler
 
         if ($tasks->isEmpty()) {
             $keyboard = Keyboard::make()->buttons([
-                Button::make('➕ Создать задачу')->action('createTaskPrompt'),
-                Button::make('🔍 Поиск задач')->action('searchTaskPrompt'),
-                Button::make('❓ Справка')->action('help'),
+                Button::make('◾️ Створити задачу')->action('createTaskPrompt'),
+                Button::make('⚫️ Пошук задач')->action('searchTaskPrompt'),
+                Button::make('Справка')->action('help'),
             ]);
             $this->chat->message("У вас ещё нет задач. Создайте первую!")->keyboard($keyboard)->send();
             return;
         }
 
         $formatted = $this->formatTasks($tasks);
-        $formatted['buttons'][] = Button::make('➕ Создать задачу')->action('createTaskPrompt');
-        $formatted['buttons'][] = Button::make('🔍 Поиск задач')->action('searchTaskPrompt');
+        $formatted['buttons'][] = Button::make('◾️ Створити задачу')->action('createTaskPrompt');
+        $formatted['buttons'][] = Button::make('⚫️ Пошук задач')->action('searchTaskPrompt');
         $keyboard = Keyboard::make()->buttons($formatted['buttons']);
         $this->chat->message($formatted['message'])->keyboard($keyboard)->send();
     }
@@ -229,21 +229,18 @@ class BotHandler extends WebhookHandler
             return;
         }
 
-        $status = $this->getStatusEmoji($task->status);
-        $priority = $this->getPriorityEmoji($task->priority);
-
-        $message = "{$status} {$priority} *{$task->title}*\n\n";
-        $message .= "📝 *Опис:* " . ($task->description ?: 'Немає опису') . "\n";
-        $message .= "🎯 *Статус:* {$task->status->value}\n";
-        $message .= "⚡ *Пріоритет:* {$task->priority->value}\n";
+        $message = "*{$task->title}*\n\n";
+        $message .= "*Опис*: " . ($task->description ?: 'Немає опису') . "\n";
+        $message .= "*Статус*: {$task->status->value}\n";
+        $message .= "*Пріоритет*: {$task->priority->value}\n";
         if ($task->due_date) {
-            $message .= "⏰ *Дедлайн:* " . $task->due_date->format('d.m.Y H:i') . "\n";
+            $message .= "*Дедлайн*: " . $task->due_date->format('d.m.Y H:i') . "\n";
         }
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('✏️ Редагувати')->action('editTaskMenu')->param('task_id', $task->id),
-            Button::make('🗑️ Видалити')->action('deleteTaskConfirm')->param('task_id', $task->id),
-            Button::make('📋 Всі задачі')->action('listTasks'),
+            Button::make('Редагувати')->action('editTaskMenu')->param('task_id', $task->id),
+            Button::make('Видалити')->action('deleteTaskConfirm')->param('task_id', $task->id),
+            Button::make('Всі задачі')->action('listTasks'),
         ]);
 
         $this->chat->message($message)->keyboard($keyboard)->send();
@@ -254,12 +251,12 @@ class BotHandler extends WebhookHandler
         $taskId = $this->data->get('task_id');
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('✏️ Змінити назву')->action('editTitle')->param('task_id', $taskId),
-            Button::make('📝 Змінити опис')->action('editDescription')->param('task_id', $taskId),
-            Button::make('📝 Змінити статус')->action('changeStatus')->param('task_id', $taskId),
-            Button::make('⚡ Змінити пріоритет')->action('changePriority')->param('task_id', $taskId),
-            Button::make('⏰ Змінити дедлайн')->action('editDeadline')->param('task_id', $taskId),
-            Button::make('🔙 Назад до задачі')->action('showTask')->param('task_id', $taskId),
+            Button::make('Змінити назву')->action('editTitle')->param('task_id', $taskId),
+            Button::make('Змінити опис')->action('editDescription')->param('task_id', $taskId),
+            Button::make('Змінити статус')->action('changeStatus')->param('task_id', $taskId),
+            Button::make('Змінити пріоритет')->action('changePriority')->param('task_id', $taskId),
+            Button::make('Змінити дедлайн')->action('editDeadline')->param('task_id', $taskId),
+            Button::make('Назад до задачі')->action('showTask')->param('task_id', $taskId),
 
         ]);
 
@@ -288,11 +285,11 @@ class BotHandler extends WebhookHandler
         $taskId = $this->data->get('task_id');
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('⏳ Очікує')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'pending'),
-            Button::make('🔄 В процесі')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'in_progress'),
-            Button::make('✅ Завершено')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'completed'),
-            Button::make('❌ Скасовано')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'cancelled'),
-            Button::make('🔙 Назад')->action('editTaskMenu')->param('task_id', $taskId),
+            Button::make('Очікує')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'pending'),
+            Button::make('В процесі')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'in_progress'),
+            Button::make('Завершено')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'completed'),
+            Button::make('Скасовано')->action('updateTaskStatus')->param('task_id', $taskId)->param('status', 'cancelled'),
+            Button::make('Назад')->action('editTaskMenu')->param('task_id', $taskId),
         ]);
 
         $this->chat->message("Оберіть новий статус:")->keyboard($keyboard)->send();
@@ -303,10 +300,10 @@ class BotHandler extends WebhookHandler
         $taskId = $this->data->get('task_id');
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('🔴 Високий')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'high'),
-            Button::make('🟡 Середній')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'medium'),
-            Button::make('🟢 Низький')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'low'),
-            Button::make('🔙 Назад')->action('editTaskMenu')->param('task_id', $taskId),
+            Button::make('Високий')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'high'),
+            Button::make('Середній')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'medium'),
+            Button::make('Низький')->action('updateTaskPriority')->param('task_id', $taskId)->param('priority', 'low'),
+            Button::make('Назад')->action('editTaskMenu')->param('task_id', $taskId),
         ]);
 
         $this->chat->message("Оберіть новий пріоритет:")->keyboard($keyboard)->send();
@@ -330,10 +327,10 @@ class BotHandler extends WebhookHandler
         $success = $this->taskService->updateTask($taskId, ['status' => $status]);
 
         if ($success) {
-            $this->reply("✅ Статус задачі оновлено!");
+            $this->reply("Статус задачі оновлено!");
             $this->showTask();
         } else {
-            $this->reply("❌ Помилка при оновленні статусу задачі.");
+            $this->reply("Помилка при оновленні статусу задачі.");
         }
     }
 
@@ -345,17 +342,17 @@ class BotHandler extends WebhookHandler
         $success = $this->taskService->updateTask($taskId, ['priority' => $priority]);
 
         if ($success) {
-            $this->reply("✅ Пріоритет задачі оновлено!");
+            $this->reply("Пріоритет задачі оновлено!");
             $this->showTask();
         } else {
-            $this->reply("❌ Помилка при оновленні пріоритету задачі.");
+            $this->reply("Помилка при оновленні пріоритету задачі.");
         }
     }
 
     public function createTaskPrompt(): void
     {
         $this->chat->message(
-            "📝 Створення нової задачі\n\n" .
+            "Створення нової задачі\n\n" .
             "Введіть назву задачі:"
         )->send();
 
@@ -367,11 +364,11 @@ class BotHandler extends WebhookHandler
         $taskId = $this->data->get('task_id');
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('✅ Так, видалити')->action('deleteTask')->param('task_id', $taskId),
-            Button::make('❌ Скасувати')->action('showTask')->param('task_id', $taskId),
+            Button::make('Так, видалити')->action('deleteTask')->param('task_id', $taskId),
+            Button::make('Скасувати')->action('showTask')->param('task_id', $taskId),
         ]);
 
-        $this->chat->message("❓ Ви впевнені, що хочете видалити цю задачу?")->keyboard($keyboard)->send();
+        $this->chat->message("Ви впевнені, що хочете видалити цю задачу?")->keyboard($keyboard)->send();
 
     }
 
@@ -381,14 +378,14 @@ class BotHandler extends WebhookHandler
         $success = $this->taskService->deleteTask($taskId);
 
         if ($success) {
-            $this->reply("🗑️ Задачу видалено!");
+            $this->reply("Задачу видалено!");
             $this->listTasks();
         } else {
-            $this->reply("❌ Помилка при видаленні задачі.");
+            $this->reply("Помилка при видаленні задачі.");
         }
     }
 
-    public function searchTaskPrompt()
+    public function searchTaskPrompt(): void
     {
         $this->chat->storage()->set('awaiting_search_query', true);
         $this->chat->message("Введіть текст для пошуку по задачах (назва або опис):")->send();
@@ -403,7 +400,7 @@ class BotHandler extends WebhookHandler
             try {
                 $date = \DateTime::createFromFormat('d.m.Y', $plainText);
                 if ($date === false) {
-                    $this->chat->message("❌ Невірний формат дати. Використовуйте формат `дд.мм.рррр`.")->send();
+                    $this->chat->message("Невірний формат дати. Використовуйте формат `дд.мм.рррр`.")->send();
                     $this->filterByDeadlinePrompt();
                     return;
                 }
@@ -413,7 +410,7 @@ class BotHandler extends WebhookHandler
                 ]);
             } catch (\Exception $e) {
                 \Log::error('Помилка обробки дати: ' . $e->getMessage());
-                $this->chat->message("❌ Помилка при обробці дати. Спробуйте ще раз.")->send();
+                $this->chat->message("Помилка при обробці дати. Спробуйте ще раз.")->send();
                 $this->filterByDeadlinePrompt();
             }
             return;
@@ -480,7 +477,7 @@ class BotHandler extends WebhookHandler
         $taskId = $this->chat->storage()->get('edit_task_id');
         $this->chat->storage()->forget('awaiting_new_title');
         $this->taskService->updateTask($taskId, ['title' => $title]);
-        $this->chat->message("✅ Назву задачі змінено!")->send();
+        $this->chat->message("Назву задачі змінено!")->send();
         $this->showTaskWithId($taskId);
     }
 
@@ -497,11 +494,11 @@ class BotHandler extends WebhookHandler
             }
         }
         if ($dateTime === false) {
-            $this->chat->message("❌ Неправильний формат дати.")->send();
+            $this->chat->message("Неправильний формат дати.")->send();
             return;
         }
         $this->taskService->updateTask($taskId, ['due_date' => $dateTime->format('Y-m-d H:i:s')]);
-        $this->chat->message("✅ Дедлайн змінено!")->send();
+        $this->chat->message("Дедлайн змінено!")->send();
         $this->showTaskWithId($taskId);
     }
 
@@ -569,10 +566,10 @@ class BotHandler extends WebhookHandler
         }
 
         if ($task) {
-            $this->reply("🎉 Задачу '{$title}' створено успішно!");
+            $this->reply("Задачу '{$title}' створено успішно!");
             $this->listTasks();
         } else {
-            $this->reply("❌ Помилка при створенні задачі.");
+            $this->reply("Помилка при створенні задачі.");
         }
     }
 
@@ -583,11 +580,11 @@ class BotHandler extends WebhookHandler
         $this->chat->storage()->set('awaiting_task_description', true);
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('⏭️ Пропустити опис')->action('skipDescription'),
+            Button::make('Пропустити опис')->action('skipDescription'),
         ]);
 
         $this->chat
-            ->message("✅ Назва збережена: *{$title}*\n\nТепер введіть опис задачі (або натисніть 'Пропустити опис'):")
+            ->message("Назва збережена: *{$title}*\n\nТепер введіть опис задачі (або натисніть 'Пропустити опис'):")
             ->keyboard($keyboard)
             ->send();
 
@@ -608,9 +605,9 @@ class BotHandler extends WebhookHandler
         $this->chat->storage()->set('awaiting_task_priority', true);
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('🔴 Високий')->action('setTaskPriority')->param('priority', 'high'),
-            Button::make('🟡 Середній')->action('setTaskPriority')->param('priority', 'medium'),
-            Button::make('🟢 Низький')->action('setTaskPriority')->param('priority', 'low'),
+            Button::make('Високий')->action('setTaskPriority')->param('priority', 'high'),
+            Button::make('Середній')->action('setTaskPriority')->param('priority', 'medium'),
+            Button::make('Низький')->action('setTaskPriority')->param('priority', 'low'),
         ]);
 
         $this->chat
@@ -630,7 +627,7 @@ class BotHandler extends WebhookHandler
             ->message("Введіть дедлайн у форматі `дд.мм.рррр год:хв` або натисніть 'Пропустити':")
             ->keyboard(
                 Keyboard::make()->buttons([
-                    Button::make('⏭️ Пропустити дедлайн')->action('skipTaskDueDate'),
+                    Button::make('Пропустити дедлайн')->action('skipTaskDueDate'),
                 ])
             )->send();
     }
@@ -647,10 +644,10 @@ class BotHandler extends WebhookHandler
         $this->chat->storage()->set('awaiting_task_status', true);
 
         $keyboard = Keyboard::make()->buttons([
-            Button::make('⏳ Очікує')->action('setTaskStatus')->param('status', 'pending'),
-            Button::make('🔄 В процесі')->action('setTaskStatus')->param('status', 'in_progress'),
-            Button::make('✅ Завершено')->action('setTaskStatus')->param('status', 'completed'),
-            Button::make('❌ Скасовано')->action('setTaskStatus')->param('status', 'cancelled'),
+            Button::make('Очікує')->action('setTaskStatus')->param('status', 'pending'),
+            Button::make('В процесі')->action('setTaskStatus')->param('status', 'in_progress'),
+            Button::make('Завершено')->action('setTaskStatus')->param('status', 'completed'),
+            Button::make('Скасовано')->action('setTaskStatus')->param('status', 'cancelled'),
         ]);
 
         $this->chat
@@ -659,45 +656,21 @@ class BotHandler extends WebhookHandler
             ->send();
     }
 
-
-    protected function getStatusEmoji($status)
-    {
-        return match($status) {
-            'pending' => '⏳',
-            'in_progress' => '🔄',
-            'completed' => '✅',
-            'cancelled' => '❌',
-            default => '❓'
-        };
-    }
-
-    protected function getPriorityEmoji($priority)
-    {
-        return match($priority) {
-            'high' => '🔴',
-            'medium' => '🟡',
-            'low' => '🟢',
-            default => '⚪'
-        };
-    }
-
     protected function formatTasks(Collection $tasks, bool $includeButtons = true): array
     {
-        $message = "📋 Результаты:\n\n";
+        $message = "Результати:\n\n";
         $buttons = [];
 
         foreach ($tasks as $task) {
-            $statusEmoji = $this->getStatusEmoji($task->status);
-            $priorityEmoji = $this->getPriorityEmoji($task->priority);
-            $message .= "{$statusEmoji} {$priorityEmoji} {$task->title}\n";
-            $message .= "   Статус: {$task->status->value}\n";
-            $message .= "   Приоритет: {$task->priority->value}\n";
+            $message .= "{$task->title}\n";
+            $message .= "Статус: {$task->status->value}\n";
+            $message .= "Пріоритет: {$task->priority->value}\n";
             if ($task->due_date) {
-                $message .= "   Дедлайн: " . $task->due_date->format('d.m.Y H:i') . "\n";
+                $message .= "Дедлайн: " . $task->due_date->format('d.m.Y H:i') . "\n";
             }
             $message .= "\n";
             if ($includeButtons) {
-                $buttons[] = Button::make("📝 {$task->title}")->action('showTask')->param('task_id', $task->id);
+                $buttons[] = Button::make(" {$task->title}")->action('showTask')->param('task_id', $task->id);
             }
         }
 

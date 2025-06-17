@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Task;
 use App\Models\TelegramUser;
 use Carbon\Carbon;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Collection;
 
@@ -25,20 +24,15 @@ class TaskService
         if (!$user) {
             return collect();
         }
+        $response = Http::get("{$this->apiUrl}/tasks", [
+            'telegram_user_id' => $user->id
+        ]);
 
-        try {
-            $response = Http::get("{$this->apiUrl}/tasks", [
-                'telegram_user_id' => $user->id
-            ]);
-
-            if ($response->successful()) {
-                $tasksData = $response->json();
-                return collect($tasksData)->map(function ($taskData) {
-                    return $this->hydrateTask($taskData);
-                });
-            }
-        } catch (\Exception $e) {
-            \Log::error('Error fetching user tasks: ' . $e->getMessage());
+        if ($response->successful()) {
+            $tasksData = $response->json();
+            return collect($tasksData)->map(function ($taskData) {
+                return $this->hydrateTask($taskData);
+            });
         }
 
         return collect();
@@ -51,22 +45,17 @@ class TaskService
         if (!$user) {
             return null;
         }
+        $response = Http::post("{$this->apiUrl}/tasks", [
+            'telegram_user_id' => $user->id,
+            'title' => $data['title'],
+            'description' => $data['description'] ?? null,
+            'status' => $data['status'] ?? 'pending',
+            'priority' => $data['priority'] ?? 'medium',
+            'due_date' => $data['due_date'] ?? null,
+        ]);
 
-        try {
-            $response = Http::post("{$this->apiUrl}/tasks", [
-                'telegram_user_id' => $user->id,
-                'title' => $data['title'],
-                'description' => $data['description'] ?? null,
-                'status' => $data['status'] ?? 'pending',
-                'priority' => $data['priority'] ?? 'medium',
-                'due_date' => $data['due_date'] ?? null,
-            ]);
-
-            if ($response->successful()) {
-                return $this->hydrateTask($response->json());
-            }
-        } catch (\Exception $e) {
-            \Log::error('Error creating task: ' . $e->getMessage());
+        if ($response->successful()) {
+            return $this->hydrateTask($response->json());
         }
 
         return null;
@@ -74,74 +63,40 @@ class TaskService
 
     public function updateTask(int $taskId, array $data): bool
     {
-        try {
-            $response = Http::put("{$this->apiUrl}/tasks/{$taskId}", $data);
-            return $response->successful();
-        } catch (\Exception $e) {
-            \Log::error('Error updating task: ' . $e->getMessage());
-            return false;
-        }
+        $response = Http::put("{$this->apiUrl}/tasks/{$taskId}", $data);
+        return $response->successful();
+
     }
 
     public function deleteTask(int $taskId): bool
     {
-        try {
-            $response = Http::delete("{$this->apiUrl}/tasks/{$taskId}");
-            return $response->successful();
-        } catch (\Exception $e) {
-            \Log::error('Error deleting task: ' . $e->getMessage());
-            return false;
-        }
+        $response = Http::delete("{$this->apiUrl}/tasks/{$taskId}");
+        return $response->successful();
     }
 
     public function getUserTasksFiltered(int $telegramUserId, string $search): Collection
     {
-        try {
             $response = Http::get("{$this->apiUrl}/tasks", [
                 'telegram_user_id' => $telegramUserId,
                 'search' => $search,
             ]);
             if ($response->successful()) {
                 $tasksData = $response->json();
-                return collect($tasksData)->map(fn ($taskData) => $this->hydrateTask($taskData));
+                return collect($tasksData)->map(fn($taskData) => $this->hydrateTask($taskData));
             }
-        } catch (\Exception $e) {
-            \Log::error('Error searching tasks: ' . $e->getMessage());
-        }
+
         return collect();
     }
 
     public function getUserTasksFilteredWithQuery(array $filters): Collection
     {
-        try {
             $response = Http::get("{$this->apiUrl}/tasks", $filters);
-
             if ($response->successful()) {
                 $tasksData = $response->json();
-                return collect($tasksData)->map(fn ($taskData) => $this->hydrateTask($taskData));
+                return collect($tasksData)->map(fn($taskData) => $this->hydrateTask($taskData));
             }
-        } catch (\Exception $e) {
-            \Log::error('Error filtering tasks: ' . $e->getMessage());
-        }
 
         return collect();
-    }
-
-
-
-    public function getTask(int $taskId): ?Task
-    {
-        try {
-            $response = Http::get("{$this->apiUrl}/tasks/{$taskId}");
-
-            if ($response->successful()) {
-                return $this->hydrateTask($response->json());
-            }
-        } catch (\Exception $e) {
-            \Log::error('Error fetching task: ' . $e->getMessage());
-        }
-
-        return null;
     }
 
     protected function hydrateTask(array $data): Task
